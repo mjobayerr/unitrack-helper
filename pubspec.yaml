@@ -1,0 +1,19 @@
+name: unitrack_helper
+description: "UniTrack helper app — on-bus GPS sender (partial slice)."
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0        # POST GPS batches to the backend
+  geolocator: ^13.0.0 # device GPS stream + runtime permission
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
