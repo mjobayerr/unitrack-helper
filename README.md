@@ -1,72 +1,99 @@
-# UniTrack — Helper
+# UniTrack Helper
 
-Flutter app (Android + iOS) for **UniTrack**, a university bus ticketing + live-tracking platform.
+Flutter app for the on-bus helper's phone — the only GPS sensor in the system
+(no IoT hardware on the buses). This slice does one thing: a Start/Stop button
+that streams the phone's location to the UniTrack backend.
 
-## Why this app matters
+## What it does
 
-There is **no IoT hardware on the buses** — the **helper's phone is the only sensor**. This app streams GPS, scans student QR tickets, and reports seat occupancy. If it goes offline or dies mid-trip, the platform must degrade gracefully.
+Start → a **location-typed foreground service** subscribes to the GPS stream,
+buffers fixes, and `POST`s them to `/helper/gps` every 5 seconds. Stop → the
+service and the notification go away.
 
-## Status — GPS sender slice (partial)
+Tracking keeps running with the screen off or the app minimised. That is the
+entire point of the foreground service.
 
-The **only** thing built so far is the live-GPS sender: stream the device's real
-GPS and POST batches to the backend every ~5 s. Everything else (QR scan, offline
-buffer, seat reports, SOS, foreground service) is still to come — see [Roadmap](#roadmap).
+## Backend contract
 
-Dart analyzes clean (`flutter analyze` → *No issues found*). It has **not** been
-run on a device yet (needs a phone/emulator).
+| | |
+|---|---|
+| Endpoint | `POST /helper/gps` → `202 Accepted` |
+| Auth | `Authorization: Bearer <access_token>` |
+| Body | `{"bus_id": "<uuid>", "points": [{"lat","lng","ts","speed","heading","accuracy"}]}` |
+| Caller must be | `role=helper` **and** `helpers.status='approved'` |
 
-### What's built & how
+`test/gps_client_test.dart` pins this payload shape against the backend's
+`GpsBatch` / `GpsPointIn` schemas.
 
-| Piece | File | How it works |
-|---|---|---|
-| App shell + UI | [`lib/main.dart`](lib/main.dart) | One screen: shows backend, bus, live position, buffered count, accepted count, last HTTP status. A single **Start/Stop** button. |
-| GPS capture | `lib/main.dart` (`geolocator`) | Requests location permission, then `getPositionStream` at high accuracy; every fix is pushed into an in-memory buffer. |
-| Upload loop | `lib/main.dart` | A 5 s `Timer` flushes up to 50 buffered fixes as one JSON batch to `POST /helper/gps`. On failure the points are **put back** so the next tick retries (offline-first spirit — spec §7.3). |
-| Config | [`lib/config.dart`](lib/config.dart) | Hardcoded `apiBase` / `helperToken` / `busId`, each overridable at run time with `--dart-define` (no rebuild, no secrets in git). |
+## Running it
 
-The batch shape matches the backend `GpsBatch` schema: `{ bus_id, points: [{lat, lng, ts, speed, heading, accuracy}] }`. Auth is a **hardcoded helper JWT** for now (Bearer header) — a real login flow comes later.
-
-## Stack
-
-Flutter (single codebase) · `geolocator` (GPS stream + runtime permission) · `http` (POST). Later: Android **foreground service** (uninterrupted GPS), `mobile_scanner` (QR), **SQLite via drift** (offline buffer), background sync on reconnect.
-
-## Run
-
-The Flutter **platform folders** (`android/`, `ios/`) are not committed — generate
-them locally. Full step-by-step (seed a bus, get a helper token, permissions,
-run, verify in Elasticsearch) is in **[SETUP.md](SETUP.md)**. Short version:
+The backend must be up first (`docker compose up` in `unitrack-backend`).
 
 ```bash
-flutter create --platforms=android,ios --project-name unitrack_helper .
 flutter pub get
-# add location + cleartext-http permissions (SETUP.md step 3), then:
-flutter run \
-  --dart-define=API_BASE=http://<LAN-IP-or-10.0.2.2>:8000 \
-  --dart-define=HELPER_TOKEN=<access_token> \
-  --dart-define=BUS_ID=<bus_uuid>
+flutter run                     # emulator: talks to http://10.0.2.2:8000
 ```
 
-Two gotchas SETUP.md handles: Android blocks plain `http://` by default
-(`usesCleartextTraffic`), and a real phone can't reach `localhost` (use the dev
-box's LAN IP).
+`10.0.2.2` is the Android emulator's alias for the host machine's `localhost`.
+On a physical phone that address is meaningless — point it at your machine's
+LAN IP instead, and make sure uvicorn is bound to `0.0.0.0`:
 
-## Roadmap
+```bash
+flutter run --dart-define=UNITRACK_BASE_URL=http://192.168.0.10:8000
+```
 
-- **Offline buffer** — persist fixes to SQLite (drift) so a dead network / app kill doesn't lose points (currently the buffer is in-memory only).
-- **Trip lifecycle** — start/stop a trip; bind fixes to a `trip_id`.
-- **Offline QR validation** — `mobile_scanner`; HMAC + time-slice + local nonce log (spec §7.5).
-- **Seat reports**, **one-tap SOS** (offline-priority-queued), **login flow** (replace hardcoded token).
-- Dart API models generated from the backend OpenAPI schema (`openapi-generator`).
+In the app: paste a **bus UUID** (from the `buses` table) and an **access
+token** (from `POST /auth/login`), then press Start.
 
-## Contract
+## Permissions
 
-No backend code here. Talks only to the **[unitrack-backend](https://github.com/mjobayerr/unitrack-backend)** API (full spec lives there).
+| Permission | Why |
+|---|---|
+| `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` | the GPS fixes |
+| `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_LOCATION` | keep sending when backgrounded |
+| `POST_NOTIFICATIONS` | Android 13+ gates the service's ongoing notification |
+| `WAKE_LOCK` | keep the CPU up between fixes |
+| `INTERNET` | reach the backend |
 
-## Sibling repos
+`ACCESS_BACKGROUND_LOCATION` is **not** requested, and should not be added. The
+location-typed foreground service already grants background access while it
+runs; the extra permission would buy nothing and invites Play Store review.
 
-- **[unitrack-backend](https://github.com/mjobayerr/unitrack-backend)** — FastAPI hub + workers (+ full spec).
-- **[unitrack-web](https://github.com/mjobayerr/unitrack-web)** — Next.js student PWA + admin dashboard.
+Cleartext HTTP is permitted only for `10.0.2.2`, `localhost` and `127.0.0.1`
+(see `res/xml/network_security_config.xml`). Everything else is HTTPS-only, in
+debug and release alike. A deployed backend must be HTTPS.
 
----
+## Known limits of this slice
 
-_Parts of this project were built with the help of AI._
+- **The access token is pasted, and expires in 15 minutes.** There is no login
+  screen and no refresh, so tracking dies mid-trip when the token expires. The
+  app stops the service and says so rather than silently failing. Real fix: a
+  login screen against `/auth/login` + refresh on 401.
+- **No offline buffer.** Fixes are held in memory, capped at 50 (the backend's
+  batch limit), oldest dropped first. Kill the app with no connectivity and
+  those fixes are gone. The spec wants a SQLite/drift buffer here.
+- **Bus ID is typed by hand** because no endpoint lists buses. A `GET
+  /helper/buses` would let this be a dropdown.
+- Battery optimisation exemption is not requested, so an aggressive OEM (Xiaomi,
+  Oppo, Samsung) may still throttle the service.
+
+## Layout
+
+```
+lib/
+  main.dart                          app entry, opens the isolate status port
+  src/
+    config.dart                      base URL (--dart-define), batching knobs
+    api/gps_client.dart              POST /helper/gps, typed auth vs retryable errors
+    data/credential_store.dart       token -> secure storage, bus id -> prefs
+    models/gps_fix.dart              mirrors GpsPointIn
+    models/tracker_status.dart       service isolate -> UI status snapshot
+    tracking/gps_task_handler.dart   runs in the service isolate: stream, buffer, POST
+    tracking/tracking_controller.dart permissions + service lifecycle
+    ui/home_page.dart                the form, the status card, the button
+```
+
+The task handler runs in **its own isolate** and shares no memory with the UI.
+Credentials are handed to it over `sendDataToTask` and never persisted where the
+service could read them back — an auto-restarted service without a token would
+be a silent no-op, which is why auto-restart is off.
