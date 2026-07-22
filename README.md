@@ -1,29 +1,47 @@
 # UniTrack Helper
 
-Flutter app for the on-bus helper's phone — the only GPS sensor in the system
-(no IoT hardware on the buses). This slice does one thing: a Start/Stop button
-that streams the phone's location to the UniTrack backend.
+Flutter app for the on-bus helper's phone — **the only GPS sensor in the system**
+(no IoT hardware on the buses). The helper signs in, starts a trip, and the phone
+streams its location to the UniTrack backend for the whole trip while also
+handling passenger counts and emergency alerts.
 
-## What it does
+Talks only to **[unitrack-backend](https://github.com/mjobayerr/unitrack-backend)**.
 
-Start → a **location-typed foreground service** subscribes to the GPS stream,
-buffers fixes, and `POST`s them to `/helper/gps` every 5 seconds. Stop → the
-service and the notification go away.
+## Status at a glance
 
-Tracking keeps running with the screen off or the app minimised. That is the
-entire point of the foreground service.
+**Functional** — runs on the Android emulator against the real backend, end to
+end (sign in → start trip → live GPS reaches Elasticsearch → seats → SOS → end):
+
+| Feature | State |
+|---|---|
+| Register (new helper → `pending_approval`) | ✅ |
+| Login (email + password) then 4-digit **PIN** unlock | ✅ |
+| Dashboard: trip status, live tracking indicator | ✅ |
+| Start / end trip with bus + route pickers (`/fleet/*`) | ✅ |
+| Background GPS via location foreground service, batched every 5 s | ✅ |
+| **Token refresh inside the service** — no more dying at 15 min | ✅ (unit-tested) |
+| **Durable SQLite outbox** — fixes survive a crash / offline gap | ✅ |
+| Survives swipe-away on stock Android; auto-restart + battery-exemption for OEM phones | ✅ config / ⚠️ needs a real Xiaomi/Realme to confirm |
+| Passenger counter (seat reports) | ✅ |
+| Emergency / SOS screen | ✅ |
+| Profile + sign out | ✅ |
+
+**Not built yet:**
+
+| Feature | Notes |
+|---|---|
+| QR ticket scanning | Needs the backend ticket/wallet subsystem (bKash-gated) |
+| iOS | Scaffolded + configured, **not built** — needs a Mac; and iOS force-quit stops tracking (Apple limit). See [`docs/background-tracking.md`](docs/background-tracking.md) |
+| Significant-location relaunch (iOS force-quit recovery) | Future |
+| Admin approval UI | Lives in the (unbuilt) web app; approve via the backend for now |
 
 ## Backend contract
 
-| | |
-|---|---|
-| Endpoint | `POST /helper/gps` → `202 Accepted` |
-| Auth | `Authorization: Bearer <access_token>` |
-| Body | `{"bus_id": "<uuid>", "points": [{"lat","lng","ts","speed","heading","accuracy"}]}` |
-| Caller must be | `role=helper` **and** `helpers.status='approved'` |
-
-`test/gps_client_test.dart` pins this payload shape against the backend's
-`GpsBatch` / `GpsPointIn` schemas.
+Full login-based auth; every call carries a Bearer access token that the app
+refreshes on a 401. Caller for trip/GPS actions must be `role=helper` **and**
+`helpers.status='approved'`. GPS payload (`POST /helper/gps` → `202`) is pinned
+against the backend's `GpsBatch` / `GpsPointIn` schemas by
+[`test/api_client_gps_test.dart`](test/api_client_gps_test.dart).
 
 ## Running it
 
@@ -102,41 +120,51 @@ Your bus comes back with a `distance_km`.
 location-typed foreground service already grants background access while it
 runs; the extra permission would buy nothing and invites Play Store review.
 
-Cleartext HTTP is permitted only for `10.0.2.2`, `localhost` and `127.0.0.1`
-(see `res/xml/network_security_config.xml`). Everything else is HTTPS-only, in
-debug and release alike. A deployed backend must be HTTPS.
+**Release builds are HTTPS-only** — a deployed backend must be `https://`. For
+LAN testing on a real phone, **debug** builds carry a cleartext override
+(`android/app/src/debug/res/xml/network_security_config.xml`); it never applies
+to release. See "On a real Android phone" above.
 
-## Known limits of this slice
+## Known limitations
 
-- **The access token is pasted, and expires in 15 minutes.** There is no login
-  screen and no refresh, so tracking dies mid-trip when the token expires. The
-  app stops the service and says so rather than silently failing. Real fix: a
-  login screen against `/auth/login` + refresh on 401.
-- **No offline buffer.** Fixes are held in memory, capped at 50 (the backend's
-  batch limit), oldest dropped first. Kill the app with no connectivity and
-  those fixes are gone. The spec wants a SQLite/drift buffer here.
-- **Bus ID is typed by hand** because no endpoint lists buses. A `GET
-  /helper/buses` would let this be a dropdown.
-- Battery optimisation exemption is not requested, so an aggressive OEM (Xiaomi,
-  Oppo, Samsung) may still throttle the service.
+- **Swipe-away on OEM phones.** Verified surviving on stock Android. Xiaomi /
+  Realme / Oppo / Samsung battery managers still kill background services unless
+  the helper grants the battery-optimisation exemption the app requests. Not
+  reproducible on the stock emulator — needs a real device.
+- **iOS is unverified** (needs a Mac to build) and stops tracking on force-quit
+  (Apple limit). See [`docs/background-tracking.md`](docs/background-tracking.md).
+- **QR ticket scanning is absent** — waits on the backend ticket/wallet
+  subsystem, which is bKash-gated.
+- The `flutter_foreground_task` plugin triggers a Kotlin-Gradle-Plugin
+  deprecation warning; builds fine today, worth watching for a future Flutter.
 
 ## Layout
 
 ```
 lib/
-  main.dart                          app entry, opens the isolate status port
+  main.dart                          app entry; builds ApiClient + controllers, opens the isolate status port
   src/
+    app.dart                         MaterialApp + go_router, session-driven redirects
+    theme/app_theme.dart             Material 3 seed theme (light/dark), responsive helpers
     config.dart                      base URL (--dart-define), batching knobs
-    api/gps_client.dart              POST /helper/gps, typed auth vs retryable errors
-    data/credential_store.dart       token -> secure storage, bus id -> prefs
+    api/api_client.dart              all endpoints; 401 → refresh → retry (single-flight)
+    data/
+      session_store.dart             refresh token + PBKDF2 PIN verifier in secure storage
+      credential_store.dart          bus id + access token the service isolate reads
+      gps_queue.dart                 durable SQLite outbox (peek / ackThrough)
+    models/api_models.dart           DTOs mirroring the backend schemas
     models/gps_fix.dart              mirrors GpsPointIn
-    models/tracker_status.dart       service isolate -> UI status snapshot
-    tracking/gps_task_handler.dart   runs in the service isolate: stream, buffer, POST
-    tracking/tracking_controller.dart permissions + service lifecycle
-    ui/home_page.dart                the form, the status card, the button
+    state/
+      session_controller.dart        auth journey: signedOut → needsPin → locked → ready
+      trip_controller.dart           the live trip, seats, alerts, fleet pickers
+      app_scope.dart                 InheritedWidget wiring for the two controllers
+    tracking/
+      gps_task_handler.dart          service isolate: stream → SQLite → POST, refreshes its own token
+      tracking_controller.dart       permissions, battery exemption, service lifecycle
+    ui/                              login · register · pin · dashboard · start_trip · counter · emergency · profile
 ```
 
 The task handler runs in **its own isolate** and shares no memory with the UI.
-Credentials are handed to it over `sendDataToTask` and never persisted where the
-service could read them back — an auto-restarted service without a token would
-be a silent no-op, which is why auto-restart is off.
+It reads the session from secure storage and **refreshes its own token**, so a
+restarted service resumes the live trip on its own — which is why auto-restart
+is now safe and enabled.
