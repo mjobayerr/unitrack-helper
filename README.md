@@ -45,6 +45,37 @@ flutter run --dart-define=UNITRACK_BASE_URL=http://192.168.0.10:8000
 In the app: paste a **bus UUID** (from the `buses` table) and an **access
 token** (from `POST /auth/login`), then press Start.
 
+### Getting a bus ID and a token
+
+From `unitrack-backend/`, with the stack up:
+
+```bash
+# 1. a bus — copy the printed uuid
+BUS_REG_NO=DHK-01 uv run python -m scripts.dev_seed_fleet     # -> bus_id=<uuid>
+
+# 2. register a helper
+curl -X POST localhost:8000/auth/register/helper \
+  -H 'content-type: application/json' \
+  -d '{"email":"bob@x.com","password":"pass1234","name":"Bob","phone":"017..."}'
+
+# 3. approve it (dev shortcut — there is no admin approval endpoint yet)
+HELPER_EMAIL=bob@x.com uv run python -m scripts.dev_seed_fleet
+
+# 4. log in — copy access_token
+curl -X POST localhost:8000/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"bob@x.com","password":"pass1234"}'
+```
+
+Then confirm the fixes landed in Elasticsearch (the backend worker must be
+running):
+
+```bash
+curl "localhost:8000/track/nearby?lat=<your_lat>&lng=<your_lng>&radius_km=5"
+```
+
+Your bus comes back with a `distance_km`.
+
 ## Permissions
 
 | Permission | Why |
