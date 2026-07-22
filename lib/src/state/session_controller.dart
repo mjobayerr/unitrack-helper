@@ -16,9 +16,11 @@ enum SessionState { unknown, signedOut, needsPin, locked, ready }
 /// check "am I signed in" for itself — a check that is easy to forget on the
 /// one page where it matters.
 class SessionController extends ChangeNotifier {
-  SessionController({required ApiClient api, SessionStore store = const SessionStore()})
-    : _api = api,
-      _store = store;
+  SessionController({
+    required ApiClient api,
+    SessionStore store = const SessionStore(),
+  }) : _api = api,
+       _store = store;
 
   final ApiClient _api;
   final SessionStore _store;

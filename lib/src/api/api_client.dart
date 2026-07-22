@@ -120,9 +120,9 @@ class ApiClient {
   }) async {
     await _post('/helper/alerts', {
       'type': kind.wireName,
-      if (message != null) 'message': message,
-      if (lat != null) 'lat': lat,
-      if (lng != null) 'lng': lng,
+      'message': ?message,
+      'lat': ?lat,
+      'lng': ?lng,
     });
   }
 

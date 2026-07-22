@@ -1,33 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
-import 'src/ui/home_page.dart';
+import 'src/api/api_client.dart';
+import 'src/app.dart';
+import 'src/state/session_controller.dart';
+import 'src/state/trip_controller.dart';
+import 'src/tracking/tracking_controller.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
   // Opens the port the service isolate reports status on. Must run before the
   // first frame, and before any service is started.
   FlutterForegroundTask.initCommunicationPort();
-  runApp(const UniTrackHelperApp());
-}
+  TrackingController.configure();
 
-class UniTrackHelperApp extends StatelessWidget {
-  const UniTrackHelperApp({super.key});
+  // Built once here and handed down, so a hot reload cannot quietly create a
+  // second ApiClient with its own token-refresh state.
+  final api = ApiClient();
+  final session = SessionController(api: api);
+  final trips = TripController(api: api);
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'UniTrack Helper',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: Colors.indigo,
-        brightness: Brightness.light,
-      ),
-      darkTheme: ThemeData(
-        colorSchemeSeed: Colors.indigo,
-        brightness: Brightness.dark,
-      ),
-      home: const HomePage(),
-    );
-  }
+  // Decides the opening screen from what is already on the device. The router
+  // shows a spinner until this resolves.
+  session.bootstrap();
+
+  runApp(UniTrackHelperApp(session: session, trips: trips));
 }

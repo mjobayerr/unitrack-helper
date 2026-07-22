@@ -25,9 +25,9 @@ class SessionStore {
   static const _pinHashKey = 'unitrack.pin_hash';
   static const _displayNameKey = 'unitrack.display_name';
 
-  static const FlutterSecureStorage _secure = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  // Defaults are correct on Android: the plugin uses its own ciphers and the
+  // old `encryptedSharedPreferences` flag is deprecated and ignored.
+  static const FlutterSecureStorage _secure = FlutterSecureStorage();
 
   // --- tokens ---
 

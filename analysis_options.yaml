@@ -1,1 +1,17 @@
 include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Cannot be satisfied for the pattern this app uses throughout: a private
+    # field (`_api`, `_store`) exposed as a *public* named constructor
+    # parameter so tests can inject a fake. `this._api` would make the
+    # parameter itself private, which no caller outside the library can pass.
+    # The rule is right for public fields; it has no correct fix for these.
+    prefer_initializing_formals: false
+
+analyzer:
+  errors:
+    # Unused code and dead nulls are bugs in the making, not style opinions.
+    unused_import: warning
+    unused_local_variable: warning
+    dead_code: warning

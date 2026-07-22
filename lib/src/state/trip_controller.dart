@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
+import '../data/credential_store.dart';
 import '../data/session_store.dart';
 import '../models/api_models.dart';
 import '../tracking/tracking_controller.dart';
@@ -12,9 +13,11 @@ import '../tracking/tracking_controller.dart';
 /// it. Keeping that in one notifier means the screens never disagree about
 /// whether a trip is running.
 class TripController extends ChangeNotifier {
-  TripController({required ApiClient api, SessionStore store = const SessionStore()})
-    : _api = api,
-      _store = store;
+  TripController({
+    required ApiClient api,
+    SessionStore store = const SessionStore(),
+  }) : _api = api,
+       _store = store;
 
   final ApiClient _api;
   final SessionStore _store;
@@ -130,6 +133,14 @@ class TripController extends ChangeNotifier {
   Future<void> _startTracking(String busId) async {
     final token = await _store.readAccessToken();
     if (token == null) throw const SessionExpiredException();
+
+    // The task handler reads these from storage in onStart as well as taking
+    // the sendDataToTask push, because a service reporting "running" does not
+    // prove its isolate has installed the handler yet — a push sent before
+    // that is simply lost. The token already shares a key with SessionStore;
+    // the bus id needs writing here or that fallback path finds nothing.
+    await const CredentialStore().writeBusId(busId);
+
     await TrackingController.start(token: token, busId: busId);
   }
 
