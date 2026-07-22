@@ -72,6 +72,39 @@ class ApiClient {
     throw ApiException(response.statusCode, _detail(response, 'Could not sign in'));
   }
 
+  /// Creates a pending helper account. Made while signed out, so it carries no
+  /// token. The account cannot log in until an admin approves it, which is why
+  /// the UI sends the helper to a "waiting for approval" screen, not to a PIN.
+  Future<void> registerHelper({
+    required String name,
+    required String email,
+    required String password,
+    String? phone,
+  }) async {
+    final response = await _http
+        .post(
+          _uri('/auth/register/helper'),
+          headers: const {'content-type': 'application/json'},
+          body: jsonEncode({
+            'name': name,
+            'email': email,
+            'password': password,
+            'phone': ?phone,
+          }),
+        )
+        .timeout(AppConfig.requestTimeout);
+
+    if (response.statusCode == 201) return;
+    if (response.statusCode == 409) {
+      throw const ApiException(409, 'That email is already registered.');
+    }
+    if (response.statusCode == 422) {
+      // Pydantic validation — most often a password under 8 characters.
+      throw const ApiException(422, 'Check your details and try again.');
+    }
+    throw ApiException(response.statusCode, _detail(response, 'Could not register'));
+  }
+
   Future<HelperProfile> me() async =>
       HelperProfile.fromJson(await _get('/auth/me'));
 

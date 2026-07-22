@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../state/app_scope.dart';
 import '../state/session_controller.dart';
@@ -126,6 +127,11 @@ class _LoginPageState extends State<LoginPage> {
                       child: CircularProgressIndicator(strokeWidth: 2.5),
                     )
                   : const Text('SIGN IN'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: session.busy ? null : () => context.push('/register'),
+              child: const Text("New helper? Create an account"),
             ),
           ],
         ),

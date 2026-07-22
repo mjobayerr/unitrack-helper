@@ -29,42 +29,54 @@ entire point of the foreground service.
 
 The backend must be up first (`docker compose up` in `unitrack-backend`).
 
+### On the Android emulator
+
 ```bash
 flutter pub get
-flutter run                     # emulator: talks to http://10.0.2.2:8000
+flutter run                     # talks to http://10.0.2.2:8000
 ```
 
-`10.0.2.2` is the Android emulator's alias for the host machine's `localhost`.
-On a physical phone that address is meaningless — point it at your machine's
-LAN IP instead, and make sure uvicorn is bound to `0.0.0.0`:
+`10.0.2.2` is the emulator's alias for the host machine's `localhost`.
+
+### On a real Android phone
+
+`10.0.2.2` means nothing on a physical device, so point the app at your
+machine's LAN IP and bind uvicorn to `0.0.0.0`:
 
 ```bash
 flutter run --dart-define=UNITRACK_BASE_URL=http://192.168.0.10:8000
 ```
 
-In the app: paste a **bus UUID** (from the `buses` table) and an **access
-token** (from `POST /auth/login`), then press Start.
-
-### Getting a bus ID and a token
-
-From `unitrack-backend/`, with the stack up:
+Cleartext `http://` to a LAN IP is blocked by default; the **debug** build
+carries a network-security override that permits it
+(`android/app/src/debug/res/xml/network_security_config.xml`), so this works out
+of the box for testing. **Release builds stay HTTPS-only** — a deployed backend
+must be `https://`, and then no override is involved:
 
 ```bash
-# 1. a bus — copy the printed uuid
-BUS_REG_NO=DHK-01 uv run python -m scripts.dev_seed_fleet     # -> bus_id=<uuid>
+flutter build apk --release --dart-define=UNITRACK_BASE_URL=https://api.yourschool.edu
+```
 
-# 2. register a helper
-curl -X POST localhost:8000/auth/register/helper \
-  -H 'content-type: application/json' \
-  -d '{"email":"bob@x.com","password":"pass1234","name":"Bob","phone":"017..."}'
+### Signing in
 
-# 3. approve it (dev shortcut — there is no admin approval endpoint yet)
-HELPER_EMAIL=bob@x.com uv run python -m scripts.dev_seed_fleet
+The app is login-based — no more pasting tokens. A helper:
 
-# 4. log in — copy access_token
-curl -X POST localhost:8000/auth/login \
-  -H 'content-type: application/json' \
-  -d '{"email":"bob@x.com","password":"pass1234"}'
+1. **Registers** in the app (Create an account), which makes a `pending_approval`
+   account. They cannot sign in yet.
+2. Is **approved by an admin** — `POST /admin/helpers/{id}/approve` (see the
+   backend's `docs/auth.md`). For dev you can shortcut this with
+   `HELPER_EMAIL=bob@x.com python -m scripts.dev_seed_fleet`.
+3. **Signs in** once with email + password, sets a 4-digit **PIN**, and from then
+   on only needs the PIN.
+
+Buses and routes come from `GET /fleet/*` and are picked from dropdowns when
+starting a trip — nothing is typed by hand.
+
+Seed a bus and routes first, from `unitrack-backend/`:
+
+```bash
+BUS_REG_NO=DHK-01 python -m scripts.dev_seed_fleet   # a bus
+python -m scripts.dev_seed_routes                    # stops + routes
 ```
 
 Then confirm the fixes landed in Elasticsearch (the backend worker must be

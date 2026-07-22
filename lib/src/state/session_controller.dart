@@ -66,6 +66,28 @@ class SessionController extends ChangeNotifier {
     });
   }
 
+  /// Registers a new helper. Does not sign them in — the account is pending
+  /// until an admin approves it — so state stays `signedOut` and the caller
+  /// shows a "waiting for approval" message on success.
+  Future<bool> register({
+    required String name,
+    required String email,
+    required String password,
+    String? phone,
+  }) async {
+    var ok = false;
+    await _guard(() async {
+      await _api.registerHelper(
+        name: name,
+        email: email,
+        password: password,
+        phone: phone,
+      );
+      ok = true;
+    });
+    return ok;
+  }
+
   /// Sets the unlock PIN right after signing in.
   Future<void> createPin(String pin) async {
     await _guard(() async {

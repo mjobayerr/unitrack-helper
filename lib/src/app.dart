@@ -11,6 +11,7 @@ import 'ui/emergency_page.dart';
 import 'ui/login_page.dart';
 import 'ui/pin_page.dart';
 import 'ui/profile_page.dart';
+import 'ui/register_page.dart';
 import 'ui/start_trip_page.dart';
 
 class UniTrackHelperApp extends StatefulWidget {
@@ -46,7 +47,9 @@ class _UniTrackHelperAppState extends State<UniTrackHelperApp> {
           return path == '/' ? null : '/';
         }
         if (session == SessionState.signedOut) {
-          return path == '/login' ? null : '/login';
+          // Registration is reachable only while signed out.
+          const signedOutOk = {'/login', '/register'};
+          return signedOutOk.contains(path) ? null : '/login';
         }
         // needsPin: signed in but no PIN chosen yet. locked: PIN exists but has
         // not been entered. Both land on the same page in different modes.
@@ -62,6 +65,7 @@ class _UniTrackHelperAppState extends State<UniTrackHelperApp> {
       routes: [
         GoRoute(path: '/', builder: (_, _) => const _SplashPage()),
         GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
+        GoRoute(path: '/register', builder: (_, _) => const RegisterPage()),
         GoRoute(path: '/pin', builder: (_, _) => const PinPage()),
         GoRoute(path: '/dashboard', builder: (_, _) => const DashboardPage()),
         GoRoute(path: '/start-trip', builder: (_, _) => const StartTripPage()),

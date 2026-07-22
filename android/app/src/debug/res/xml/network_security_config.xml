@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG-ONLY override. Android merges src/debug/res over src/main/res, so this
+  file replaces the HTTPS-only production config *for debug builds only*. It
+  permits cleartext everywhere, which is what lets a real phone reach a dev
+  backend over http on the LAN (e.g. http://192.168.0.10:8000) during testing.
+
+  Release builds never see this file — they use src/main, which keeps cleartext
+  off and demands HTTPS. So this convenience cannot leak into production.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
