@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../data/session_store.dart';
 import '../models/api_models.dart';
+import '../models/gps_fix.dart';
 
 /// Thrown when the session is unrecoverable and the user must sign in again.
 class SessionExpiredException implements Exception {
@@ -103,6 +104,25 @@ class ApiClient {
   Future<ActiveTrip?> activeTrip() async {
     final json = await _getNullable('/helper/trips/active');
     return json == null ? null : ActiveTrip.fromJson(json);
+  }
+
+  // --- gps ---
+
+  /// Posts a batch of fixes. Returns how many the backend accepted.
+  ///
+  /// Deliberately on this client rather than a separate one: it inherits the
+  /// 401-refresh, which is the whole reason tracking used to die 15 minutes
+  /// into a route. Two HTTP clients means two auth paths, and the one the
+  /// background service uses is the one nobody watches.
+  Future<int> postGps({
+    required String busId,
+    required List<GpsFix> fixes,
+  }) async {
+    final json = await _post('/helper/gps', {
+      'bus_id': busId,
+      'points': [for (final fix in fixes) fix.toJson()],
+    });
+    return json['accepted'] as int;
   }
 
   // --- operations ---

@@ -123,25 +123,23 @@ class TripController extends ChangeNotifier {
     return sent;
   }
 
-  /// Hands the service the credentials it needs.
+  /// Tells the service which bus it is tracking.
   ///
-  /// Known limitation: the isolate receives a 15-minute access token and has no
-  /// way to refresh it, so tracking still dies mid-route on a long trip. Fixing
-  /// it properly means moving the refresh into the task handler and having it
-  /// drain the durable outbox — that is the next piece of work, and it is why
-  /// GpsQueue exists but is not yet wired in.
+  /// No token crosses the isolate boundary: the handler reads the session from
+  /// shared secure storage and refreshes it on its own, which is what stops
+  /// tracking from dying 15 minutes into a route.
   Future<void> _startTracking(String busId) async {
-    final token = await _store.readAccessToken();
-    if (token == null) throw const SessionExpiredException();
+    if (await _store.readRefreshToken() == null) {
+      throw const SessionExpiredException();
+    }
 
-    // The task handler reads these from storage in onStart as well as taking
-    // the sendDataToTask push, because a service reporting "running" does not
-    // prove its isolate has installed the handler yet — a push sent before
-    // that is simply lost. The token already shares a key with SessionStore;
-    // the bus id needs writing here or that fallback path finds nothing.
+    // The handler reads this from storage in onStart as well as taking the
+    // sendDataToTask push, because a service reporting "running" does not prove
+    // its isolate has installed the handler yet — a push sent before that is
+    // simply lost.
     await const CredentialStore().writeBusId(busId);
 
-    await TrackingController.start(token: token, busId: busId);
+    await TrackingController.start(busId: busId);
   }
 
   Future<void> _guard(Future<void> Function() action) async {

@@ -91,11 +91,12 @@ class TrackingController {
     // not requested.
   }
 
-  /// Starts the service, then hands it the credentials.
-  static Future<void> start({
-    required String token,
-    required String busId,
-  }) async {
+  /// Starts the service, then tells it which bus it is tracking.
+  ///
+  /// No token is passed: the isolate reads the session from shared secure
+  /// storage and refreshes it itself. Handing it a 15-minute access token was
+  /// what made tracking die mid-route.
+  static Future<void> start({required String busId}) async {
     if (await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.stopService();
     }
@@ -111,15 +112,11 @@ class TrackingController {
       throw Exception('Could not start the tracker: ${result.error}');
     }
 
-    // Belt and braces: the handler also reads these from storage in onStart,
+    // Belt and braces: the handler also reads this from storage in onStart,
     // because a service reporting "running" does not prove its isolate has
     // installed the task handler yet, and a push sent before that is lost.
     FlutterForegroundTask.sendDataToTask(
-      jsonEncode({
-        'cmd': GpsTaskHandler.configCommand,
-        'token': token,
-        'busId': busId,
-      }),
+      jsonEncode({'cmd': GpsTaskHandler.configCommand, 'busId': busId}),
     );
   }
 
