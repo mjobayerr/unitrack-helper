@@ -4,13 +4,6 @@
          debug/profile manifests, so a release build needs it declared here. -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
-    <!-- flutter_foreground_task merges this in for its boot-restart feature.
-         autoRunOnBoot is off (a resurrected service would hold an expired
-         token), so drop it rather than ask users for it. -->
-    <uses-permission
-        android:name="android.permission.RECEIVE_BOOT_COMPLETED"
-        tools:node="remove"/>
-
     <!-- GPS fixes. COARSE is declared because the runtime dialog offers
          "Approximate" as a downgrade and Android grants that instead. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
@@ -22,6 +15,20 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- allowAutoRestart brings the service back if the OS kills it mid-trip;
+         flutter_foreground_task re-arms that restart on the next boot, so the
+         boot receiver is required. Tracking still only STARTS from a deliberate
+         Start Trip (autoRunOnBoot is off) — this just lets an already-running
+         shift survive a kill. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!-- Ask to be exempt from Doze / battery optimisation. Without this, OEM
+         battery managers (Xiaomi, Realme, Oppo, Samsung) kill the foreground
+         service on a swipe-away — the single biggest cause of dropped tracking
+         on real phones in this market. -->
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <!-- Android 13+ requires runtime consent before the service's ongoing
          notification can be shown, and the service cannot run without it. -->

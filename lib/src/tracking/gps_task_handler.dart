@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
@@ -70,10 +71,7 @@ class GpsTaskHandler extends TaskHandler {
 
     _positionSubscription =
         Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: AppConfig.distanceFilterMeters,
-          ),
+          locationSettings: _locationSettings(),
         ).listen(
           _onPosition,
           onError: (Object error) {
@@ -82,6 +80,31 @@ class GpsTaskHandler extends TaskHandler {
           },
         );
     _report();
+  }
+
+  /// Platform-specific location settings.
+  ///
+  /// iOS needs [AppleSettings] with `allowBackgroundLocationUpdates` for Core
+  /// Location to keep delivering while backgrounded, plus the blue status-bar
+  /// indicator that App Store review requires. Android's background delivery
+  /// comes from the foreground service, not from these flags, so the plain
+  /// settings are enough there.
+  static LocationSettings _locationSettings() {
+    if (Platform.isIOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: AppConfig.distanceFilterMeters,
+        allowBackgroundLocationUpdates: true,
+        // A moving bus never idles long enough that iOS should pause updates;
+        // pausing would drop the very fixes riders are watching.
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+      );
+    }
+    return const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: AppConfig.distanceFilterMeters,
+    );
   }
 
   Future<String?> _readBusId() async {

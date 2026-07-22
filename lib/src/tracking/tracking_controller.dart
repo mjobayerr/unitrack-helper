@@ -39,12 +39,18 @@ class TrackingController {
         eventAction: ForegroundTaskEventAction.repeat(AppConfig.flushIntervalMs),
         allowWakeLock: true,
         allowWifiLock: true,
-        // Any stored token is good for 15 minutes, so a service resurrected
-        // unattended would almost certainly wake up holding an expired one and
-        // sit there failing. Tracking is started deliberately or not at all.
+        // If the OS kills the service — the guaranteed outcome on OEM phones
+        // (Xiaomi, Realme, Samsung) with battery optimisation on — restart it.
+        // On restart the handler reads the bus id and refresh token from
+        // storage and resumes the still-live trip. This was previously off
+        // because the isolate held a 15-minute access token it could not renew;
+        // now it refreshes its own token, so a resurrected service works.
+        allowAutoRestart: true,
+        // Reinstall / update should also bring tracking back mid-shift.
+        autoRunOnMyPackageReplaced: true,
+        // Boot stays off: a phone rebooting is not a helper starting a shift,
+        // and tracking must begin from a deliberate Start Trip, not silently.
         autoRunOnBoot: false,
-        autoRunOnMyPackageReplaced: false,
-        allowAutoRestart: false,
       ),
     );
   }
@@ -89,6 +95,16 @@ class TrackingController {
     // whileInUse is enough: the location-typed foreground service is what keeps
     // fixes coming with the app backgrounded, so ACCESS_BACKGROUND_LOCATION is
     // not requested.
+
+    // The real-world reason tracking dies on a swipe-away: OEM battery
+    // managers (Xiaomi, Realme, Oppo, Samsung — most of the Bangladeshi
+    // market) kill background services aggressively unless the app is exempt.
+    // This asks the system to stop doing that. Best-effort: if the helper
+    // declines, tracking still works while the app is open, so a refusal must
+    // not block starting a trip — it only makes a swipe-away less reliable.
+    if (!await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
+      await FlutterForegroundTask.requestIgnoreBatteryOptimization();
+    }
   }
 
   /// Starts the service, then tells it which bus it is tracking.
